@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Simulador de Inventarios</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f7f3f5;color:#241f23}
+header{background:#fff;padding:22px 16px;text-align:center;border-bottom:1px solid #ddd}h1{margin:0;font-size:25px}.sub{color:#666;margin:7px 0 0}
+main{max-width:920px;margin:20px auto;padding:0 14px}.card{background:#fff;border:1px solid #ddd;border-radius:18px;padding:17px;margin-bottom:15px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}label{font-weight:bold;font-size:14px;display:block;margin-bottom:5px}
+input,select,button{width:100%;min-height:44px;border:1px solid #ccc;border-radius:10px;padding:9px;font-size:16px}
+button{background:#282329;color:white;border:0;font-weight:bold;cursor:pointer}.secondary{background:#eee;color:#282329}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.stat{background:#f1ebef;border-radius:13px;padding:13px}.stat b{display:block;font-size:21px;margin-top:4px}
+.table{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:9px;border-bottom:1px solid #e5e5e5;text-align:left;white-space:nowrap}
+.badge{display:inline-block;border:1px solid #ccc;border-radius:99px;padding:4px 8px;font-size:12px}.result{font-size:29px;font-weight:bold}.muted{font-size:13px;color:#666}.methodbox{border:1px solid #ddd;border-radius:12px;padding:12px;margin-top:10px}
+.notice{background:#faf6e9;border-radius:10px;padding:10px;font-size:13px;margin-top:10px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr 1fr}.stat b{font-size:18px}}
+</style>
+</head>
+<body>
+<header><h1>📦 Inventarios y Métodos de Valuación</h1><p class="sub">Simulador interactivo · 3ro Contabilidad · Fe y Alegría</p></header>
+<main>
+<section class="stats">
+<div class="stat">Productos<b id="nprod">0</b></div><div class="stat">Unidades<b id="nunits">0</b></div><div class="stat">Inventario<b id="ntotal">$0.00</b></div>
+</section>
+
+<section class="card">
+<h2>1. Crea tu producto</h2>
+<div class="grid">
+<div><label>Nombre del producto</label><input id="pname" placeholder="Ej.: Cuadernos"></div>
+<div><label>Código</label><input id="pcode" placeholder="Ej.: P001"></div>
+</div>
+<button id="create" style="margin-top:11px">Crear producto</button>
+<p id="pmsg" class="muted"></p>
+</section>
+
+<section class="card">
+<h2>2. Registra compras y ventas</h2>
+<p class="muted">Primero registra las compras con sus diferentes costos. Luego registra las ventas.</p>
+<div class="grid">
+<div><label>Producto</label><select id="prod"></select></div>
+<div><label>Movimiento</label><select id="mov"><option value="buy">Compra / Entrada</option><option value="sell">Venta / Salida</option></select></div>
+<div><label>Cantidad</label><input id="qty" type="number" min="1" step="1" value="10"></div>
+<div><label>Costo unitario de compra ($)</label><input id="cost" type="number" min="0.01" step="0.01" value="2.00"></div>
+</div>
+<button id="register" style="margin-top:11px">Registrar movimiento</button>
+<p id="msg" class="muted"></p>
+</section>
+
+<section class="card">
+<h2>3. Valuación del inventario</h2>
+<div class="grid">
+<div><label>Producto</label><select id="vp"></select></div>
+<div><label>Método</label><select id="vm"><option value="FIFO">FIFO</option><option value="LIFO">LIFO</option><option value="AVG">Promedio ponderado</option></select></div>
+</div>
+<div class="methodbox">
+<div class="muted">Existencia final</div><div class="result" id="ending">$0.00</div>
+<div class="muted" id="summary"></div>
+<div class="muted" id="cogs" style="margin-top:5px"></div>
+</div>
+<div class="notice">💡 Prueba una misma compra y venta con los tres métodos. Si existen compras a precios diferentes, el valor del inventario final puede cambiar.</div>
+</section>
+
+<section class="card">
+<h2>📋 Movimientos registrados</h2>
+<div class="table"><table><thead><tr><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>Costo</th></tr></thead><tbody id="movbody"></tbody></table></div>
+</section>
+
+<section class="card">
+<h2>📚 ¿Cómo funciona?</h2>
+<p><b>FIFO:</b> las primeras unidades compradas se consideran las primeras en salir.</p>
+<p><b>LIFO:</b> las últimas unidades compradas se consideran las primeras en salir.</p>
+<p><b>Promedio ponderado:</b> se obtiene un costo promedio de las unidades disponibles y se utiliza para valorar la existencia.</p>
+<p class="notice">Nota académica: LIFO se incluye aquí únicamente como método de aprendizaje/comparación. Las NIIF no permiten LIFO para la medición de inventarios.</p>
+</section>
+</main>
+<script>
+const products=[]; const moves=[];
+const $=id=>document.getElementById(id); const money=n=>"$"+Number(n).toFixed(2);
+function selected(id){return products.find(p=>p.id===id)}
+function fill(){
+  [$("prod"),$("vp")].forEach(s=>{let old=s.value;s.innerHTML="";products.forEach(p=>{let o=document.createElement("option");o.value=p.id;o.textContent=p.code+" · "+p.name;s.appendChild(o)});if(selected(old))s.value=old});
+}
+function createProduct(){
+  let name=$("pname").value.trim(),code=$("pcode").value.trim()||"P"+String(products.length+1).padStart(3,"0");
+  if(!name){$("pmsg").textContent="Escribe un nombre para el producto.";return}
+  if(products.some(p=>p.code.toLowerCase()===code.toLowerCase())){code=code+"-"+(products.length+1)}
+  products.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),name,code});
+  $("pname").value="";$("pcode").value="";$("pmsg").textContent="Producto creado. Ahora registra sus compras.";fill();render();
+}
+function register(){
+  if(!products.length){$("msg").textContent="Primero crea un producto.";return}
+  let p=selected($("prod").value),type=$("mov").value,q=Math.max(1,parseInt($("qty").value)||0),c=Math.max(.01,parseFloat($("cost").value)||0);
+  if(type==="sell"){
+    let stock=currentStock(p);if(q>stock){$("msg").textContent="No hay suficientes unidades. Existencia actual: "+stock+".";return}
+  }
+  moves.push({pid:p.id,type,q,c});$("msg").textContent=type==="buy"?"Compra registrada correctamente.":"Venta registrada correctamente.";render();
+}
+function currentStock(p){return moves.filter(m=>m.pid===p.id).reduce((s,m)=>s+(m.type==="buy"?m.q:-m.q),0)}
+function layersFor(p){
+  let layers=[];
+  moves.filter(m=>m.pid===p.id).forEach(m=>{if(m.type==="buy")layers.push({q:m.q,c:m.c});else{let left=m.q;while(left>0&&layers.length){let l=layers[0],take=Math.min(left,l.q);l.q-=take;left-=take;if(l.q===0)layers.shift()}}});
+  return layers;
+}
+function calc(p,method){
+  let buys=moves.filter(m=>m.pid===p.id&&m.type==="buy"), sales=moves.filter(m=>m.pid===p.id&&m.type==="sell").reduce((s,m)=>s+m.q,0);
+  let totalBought=buys.reduce((s,m)=>s+m.q,0), totalCost=buys.reduce((s,m)=>s+m.q*m.c,0), stock=totalBought-sales;
+  if(stock<=0)return {value:0,cogs:totalCost,stock:0};
+  if(method==="AVG"){let avg=totalBought?totalCost/totalBought:0;return {value:stock*avg,cogs:sales*avg,stock}}
+  let layers=[];buys.forEach(m=>layers.push({q:m.q,c:m.c}));
+  let remaining=sales;
+  if(method==="FIFO"){while(remaining>0&&layers.length){let l=layers[0],take=Math.min(remaining,l.q);l.q-=take;remaining-=take;if(!l.q)layers.shift()}}
+  else {while(remaining>0&&layers.length){let i=layers.length-1,l=layers[i],take=Math.min(remaining,l.q);l.q-=take;remaining-=take;if(!l.q)layers.pop()}}
+  return {value:layers.reduce((s,l)=>s+l.q*l.c,0),cogs:totalCost-layers.reduce((s,l)=>s+l.q*l.c,0),stock};
+}
+function render(){
+  $("nprod").textContent=products.length;
+  let units=0,total=0;products.forEach(p=>{let l=layersFor(p);units+=l.reduce((s,x)=>s+x.q,0);total+=l.reduce((s,x)=>s+x.q*x.c,0)});
+  $("nunits").textContent=units;$("ntotal").textContent=money(total);
+  let b=$("movbody");b.innerHTML="";
+  moves.forEach(m=>{let p=selected(m.pid),r=b.insertRow();r.innerHTML=`<td>${p.name}</td><td><span class="badge">${m.type==="buy"?"Entrada":"Salida"}</span></td><td>${m.q}</td><td>${money(m.c)}</td>`});
+  calcRender();
+}
+function calcRender(){
+  if(!products.length){$("ending").textContent="$0.00";$("summary").textContent="Crea un producto para comenzar.";return}
+  let p=selected($("vp").value)||products[0];$("vp").value=p.id;
+  let r=calc(p,$("vm").value);$("ending").textContent=money(r.value);
+  $("summary").textContent=`${r.stock} unidades finales · ${$("vm").value==="AVG"?"Promedio ponderado":$("vm").value}`;
+  $("cogs").textContent=`Costo de ventas estimado: ${money(r.cogs)}`;
+}
+$("create").onclick=createProduct;$("register").onclick=register;$("vm").onchange=calcRender;$("vp").onchange=calcRender;
+fill();render();
+</script>
+</body></html>
